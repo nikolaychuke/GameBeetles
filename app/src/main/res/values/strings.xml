@@ -1,3 +1,9 @@
 <resources>
-    <string name="app_name">Game Beetles</string>
+    <string name="app_name">GameBeetles</string>
+    <string name="score_format">Очки: %d</string>
+    <string name="time_format">Время: %d сек</string>
+    <string name="start_game">Начать игру</string>
+    <string name="game_in_progress">Игра идёт…</string>
+    <string name="play_again">Играть снова</string>
+    <string name="game_over_format">Игра окончена! Ваш счёт: %d</string>
 </resources>
