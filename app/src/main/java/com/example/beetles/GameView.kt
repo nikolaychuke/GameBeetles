@@ -7,6 +7,8 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.random.Random
 
 class GameView @JvmOverloads constructor(
@@ -20,26 +22,28 @@ class GameView @JvmOverloads constructor(
 
     var onScoreChanged: ((Int) -> Unit)? = null
     var onTimeChanged: ((Int) -> Unit)? = null
-    var onGameOver: ((Int) -> Unit)? = null
+    var onGameOver: ((GameResult) -> Unit)? = null
 
-    private val beetles = mutableListOf<Beetle>()
+    private val bugs = mutableListOf<Bug>()
     private var score = 0
+    private var hits = 0
+    private var misses = 0
     private var timeLeft = 0
     private var isRunning = false
+    private var nextId = 0
 
     private val handler = Handler(Looper.getMainLooper())
-    private val beetleBitmaps = mutableListOf<Bitmap>()
-    private val beetleSize = 150
+    private val bugBitmaps = mutableMapOf<BugType, Bitmap>()
+    private val baseSize = 120
 
     init {
-        beetleBitmaps.add(createBeetleBitmap(Color.rgb(180, 60, 60)))
-        beetleBitmaps.add(createBeetleBitmap(Color.rgb(60, 140, 60)))
-        beetleBitmaps.add(createBeetleBitmap(Color.rgb(60, 90, 180)))
-        beetleBitmaps.add(createBeetleBitmap(Color.rgb(150, 80, 180)))
+        BugType.values().forEach { type ->
+            val size = (baseSize * type.sizeFactor).toInt()
+            bugBitmaps[type] = createBugBitmap(type.color, size)
+        }
     }
 
-    private fun createBeetleBitmap(bodyColor: Int): Bitmap {
-        val size = beetleSize
+    private fun createBugBitmap(bodyColor: Int, size: Int): Bitmap {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -49,8 +53,7 @@ class GameView @JvmOverloads constructor(
         val dark = darken(bodyColor, 0.55f)
         val light = lighten(bodyColor, 0.25f)
 
-
-        //Ноги
+        // Ноги
         paint.color = dark
         paint.strokeWidth = 4f * s
         paint.strokeCap = Paint.Cap.ROUND
@@ -60,30 +63,30 @@ class GameView @JvmOverloads constructor(
             c.drawLine(cx + 10f * s, y, cx + 35f * s, y + 10f * s, paint)
         }
 
-        //Брюшко
+        // Брюшко
         paint.color = dark
         c.drawOval(RectF(cx - 20f * s, 30f * s, cx + 20f * s, 90f * s), paint)
 
-        //Крылья
+        // Крылья
         paint.color = bodyColor
         c.drawOval(RectF(cx - 25f * s, 30f * s, cx - 2f * s, 85f * s), paint)
         c.drawOval(RectF(cx + 2f * s, 30f * s, cx + 25f * s, 85f * s), paint)
 
-        //Блики
+        // Блики
         paint.color = light
         c.drawOval(RectF(cx - 20f * s, 35f * s, cx - 10f * s, 60f * s), paint)
         c.drawOval(RectF(cx + 10f * s, 35f * s, cx + 20f * s, 60f * s), paint)
 
-        //Голова
+        // Голова
         paint.color = dark
         c.drawCircle(cx, 28f * s, 12f * s, paint)
 
-        //Усики
+        // Усики
         paint.strokeWidth = 2f * s
         c.drawLine(cx - 5f * s, 20f * s, cx - 20f * s, 5f * s, paint)
         c.drawLine(cx + 5f * s, 20f * s, cx + 20f * s, 5f * s, paint)
 
-        //Глаза
+        // Глаза
         paint.color = Color.WHITE
         c.drawCircle(cx - 5f * s, 25f * s, 2.5f * s, paint)
         c.drawCircle(cx + 5f * s, 25f * s, 2.5f * s, paint)
@@ -112,13 +115,16 @@ class GameView @JvmOverloads constructor(
             return
         }
         handler.removeCallbacks(gameLoop)
-        beetles.clear()
+        bugs.clear()
         score = 0
+        hits = 0
+        misses = 0
+        nextId = 0
         timeLeft = roundDuration
         isRunning = true
         onScoreChanged?.invoke(score)
         onTimeChanged?.invoke(timeLeft)
-        spawnBeetles()
+        spawnBugs()
         handler.post(gameLoop)
     }
 
@@ -127,31 +133,45 @@ class GameView @JvmOverloads constructor(
         handler.removeCallbacks(gameLoop)
     }
 
-    private fun spawnBeetles() {
-        repeat(maxBeetles.coerceAtMost(beetleBitmaps.size)) {
-            spawnOneBeetle()
+    private fun spawnBugs() {
+        repeat(maxBeetles.coerceAtMost(3)) {
+            spawnOneBug()
         }
     }
 
-    private fun spawnOneBeetle() {
-        if (beetles.size >= maxBeetles) return
+    private fun spawnOneBug() {
+        if (bugs.size >= maxBeetles) return
         if (width == 0 || height == 0) return
 
-        val bmp = beetleBitmaps[Random.nextInt(beetleBitmaps.size)]
-        val size = beetleSize
-        val maxX = (width - size).toFloat().coerceAtLeast(1f)
-        val maxY = (height - size).toFloat().coerceAtLeast(1f)
-        val x = Random.nextFloat() * maxX
-        val y = Random.nextFloat() * maxY
+        val type = pickRandomType()
+        val bmp = bugBitmaps[type] ?: return
+        val size = (baseSize * type.sizeFactor).toInt()
 
-        val b = Beetle(x, y, bmp, size)
-        val speed = gameSpeed * 5f
+        val sizeXLogical = size.toFloat() / width
+        val sizeYLogical = size.toFloat() / height
+        val logicalX = Random.nextFloat() * (1f - sizeXLogical).coerceAtLeast(0.01f)
+        val logicalY = Random.nextFloat() * (1f - sizeYLogical).coerceAtLeast(0.01f)
+
+        val pixelSpeed = gameSpeed * 5f * type.speedFactor
+        val logicalSpeedX = pixelSpeed / width
+        val logicalSpeedY = pixelSpeed / height
 
         val angle = Random.nextFloat() * 2f * Math.PI.toFloat()
-        b.vx = kotlin.math.cos(angle) * speed
-        b.vy = kotlin.math.sin(angle) * speed
+        val vx = cos(angle) * logicalSpeedX
+        val vy = sin(angle) * logicalSpeedY
 
-        beetles.add(b)
+        val bug = Bug(nextId++, type, logicalX, logicalY, vx, vy, bmp, size)
+        bugs.add(bug)
+    }
+
+    private fun pickRandomType(): BugType {
+        val total = BugType.values().sumOf { it.spawnWeight }
+        var r = Random.nextInt(total)
+        for (type in BugType.values()) {
+            if (r < type.spawnWeight) return type
+            r -= type.spawnWeight
+        }
+        return BugType.COMMON
     }
 
     private val gameLoop = object : Runnable {
@@ -166,7 +186,7 @@ class GameView @JvmOverloads constructor(
     private var tickCounter = 0
 
     private fun update() {
-        for (b in beetles) b.update(width, height)
+        for (b in bugs) b.update(width, height)
 
         tickCounter++
         if (tickCounter >= 60) {
@@ -176,19 +196,21 @@ class GameView @JvmOverloads constructor(
 
             if (timeLeft <= 0) {
                 stopGame()
-                onGameOver?.invoke(score)
+                val total = hits + misses
+                val accuracy = if (total > 0) hits.toFloat() / total else 0f
+                onGameOver?.invoke(GameResult(score, hits, misses, accuracy))
                 return
             }
         }
 
-        if (beetles.size < maxBeetles) {
-            spawnOneBeetle()
+        if (bugs.size < maxBeetles) {
+            spawnOneBug()
         }
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        for (b in beetles) b.draw(canvas)
+        for (b in bugs) b.draw(canvas)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -197,12 +219,13 @@ class GameView @JvmOverloads constructor(
             val y = event.y
             var hit = false
 
-            for (i in beetles.indices.reversed()) {
-                val b = beetles[i]
+            for (i in bugs.indices.reversed()) {
+                val b = bugs[i]
                 if (b.rect.contains(x, y)) {
                     hit = true
-                    score += 1
-                    beetles.removeAt(i)
+                    score += b.type.points
+                    hits++
+                    bugs.removeAt(i)
                     onScoreChanged?.invoke(score)
                     break
                 }
@@ -210,6 +233,7 @@ class GameView @JvmOverloads constructor(
 
             if (!hit) {
                 score = (score - 1).coerceAtLeast(0)
+                misses++
                 onScoreChanged?.invoke(score)
             }
             invalidate()

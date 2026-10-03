@@ -1,9 +1,16 @@
 <resources>
     <string name="app_name">GameBeetles</string>
-    <string name="score_format">Очки: %d</string>
-    <string name="time_format">Время: %d сек</string>
+
+    <string name="score_format">Очки: %1$d</string>
+    <string name="time_format">Время: %1$d сек</string>
     <string name="start_game">Начать игру</string>
     <string name="game_in_progress">Игра идёт…</string>
     <string name="play_again">Играть снова</string>
-    <string name="game_over_format">Игра окончена! Ваш счёт: %d</string>
+
+    <string name="cancel">Отмена</string>
+    <string name="result_title">Раунд завершён</string>
+    <string name="result_score">Очки: %1$d</string>
+    <string name="result_hits">Попаданий: %1$d</string>
+    <string name="result_misses">Промахов: %1$d</string>
+    <string name="result_accuracy">Точность: %1$d%%</string>
 </resources>

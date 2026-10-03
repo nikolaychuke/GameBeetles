@@ -7,7 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 
 class GameFragment : Fragment() {
@@ -35,14 +35,10 @@ class GameFragment : Fragment() {
         gameView.onTimeChanged = { t ->
             textTime.text = getString(R.string.time_format, t)
         }
-        gameView.onGameOver = { score ->
+        gameView.onGameOver = { result ->
             btnStart.isEnabled = true
             btnStart.text = getString(R.string.play_again)
-            Toast.makeText(
-                requireContext(),
-                getString(R.string.game_over_format, score),
-                Toast.LENGTH_LONG
-            ).show()
+            showResultDialog(result)
         }
 
         btnStart.setOnClickListener {
@@ -59,6 +55,27 @@ class GameFragment : Fragment() {
         }
 
         return view
+    }
+
+    private fun showResultDialog(result: GameResult) {
+        val accuracyPercent = (result.accuracy * 100).toInt()
+
+        val message = buildString {
+            appendLine(getString(R.string.result_score, result.score))
+            appendLine(getString(R.string.result_hits, result.hits))
+            appendLine(getString(R.string.result_misses, result.misses))
+            append(getString(R.string.result_accuracy, accuracyPercent))
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.result_title)
+            .setMessage(message)
+            .setNegativeButton(R.string.cancel, null)          // ← слева, ничего не делает
+            .setPositiveButton(R.string.play_again) { _, _ ->
+                btnStart.performClick()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     override fun onPause() {
