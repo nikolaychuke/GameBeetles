@@ -91,12 +91,21 @@
 
         <Button
             android:id="@+id/btnShow"
-            android:backgroundTint="@color/accent_blue"
-            android:textColor="@color/colorOnPrimary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Показать данные"/>
+            android:backgroundTint="@color/accent_blue"
+            android:textColor="@color/colorOnPrimary"
+            android:text="Зарегистрироваться" />
+
+        <Button
+            android:id="@+id/btnSelectExisting"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="@color/accent_blue"
+            android:textColor="@color/colorOnPrimary"
+            android:text="Выбрать существующего игрока" />
 
         <TextView
             android:id="@+id/textResult"
@@ -114,5 +123,6 @@
             android:contentDescription="Знак зодиака"
             android:scaleType="fitCenter"
             android:visibility="gone" />
+
     </LinearLayout>
 </ScrollView>

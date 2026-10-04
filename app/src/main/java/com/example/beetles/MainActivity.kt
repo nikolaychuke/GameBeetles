@@ -9,11 +9,10 @@ import com.google.android.material.tabs.TabLayoutMediator
 
 class MainActivity : AppCompatActivity() {
 
-    private val tabTitles = listOf("Игрок", "Правила", "Авторы", "Настройки", "Игра")
+    private val tabTitles = listOf("Игрок", "Правила", "Авторы", "Настройки", "Игра", "Рекорды")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 

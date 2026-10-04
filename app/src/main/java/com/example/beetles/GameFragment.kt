@@ -7,8 +7,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import com.example.beetles.data.CurrentPlayer
+import com.example.beetles.data.GameRepository
+import com.example.beetles.data.ScoreEntity
+import kotlinx.coroutines.launch
 
 class GameFragment : Fragment() {
 
@@ -16,6 +22,7 @@ class GameFragment : Fragment() {
     private lateinit var textScore: TextView
     private lateinit var textTime: TextView
     private lateinit var btnStart: Button
+    private lateinit var repository: GameRepository
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -23,6 +30,7 @@ class GameFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         val view = inflater.inflate(R.layout.game_form, container, false)
+        repository = GameRepository(requireContext())
 
         gameView = view.findViewById(R.id.gameView)
         textScore = view.findViewById(R.id.textScore)
@@ -38,10 +46,20 @@ class GameFragment : Fragment() {
         gameView.onGameOver = { result ->
             btnStart.isEnabled = true
             btnStart.text = getString(R.string.play_again)
-            showResultDialog(result)
+            saveScoreAndShowDialog(result)
         }
 
         btnStart.setOnClickListener {
+            val playerId = CurrentPlayer.getPlayerId(requireContext())
+            if (playerId <= 0L) {
+                Toast.makeText(
+                    requireContext(),
+                    "Сначала зарегистрируйтесь на вкладке «Игрок»",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+
             val prefs = requireContext()
                 .getSharedPreferences("beetles", Context.MODE_PRIVATE)
 
@@ -57,6 +75,28 @@ class GameFragment : Fragment() {
         return view
     }
 
+    private fun saveScoreAndShowDialog(result: GameResult) {
+        val playerId = CurrentPlayer.getPlayerId(requireContext())
+
+        lifecycleScope.launch {
+            if (playerId > 0L) {
+                val difficulty = gameView.gameSpeed
+                repository.saveScore(
+                    ScoreEntity(
+                        playerId = playerId,
+                        score = result.score,
+                        hits = result.hits,
+                        misses = result.misses,
+                        accuracy = result.accuracy,
+                        difficulty = difficulty,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            }
+            showResultDialog(result)
+        }
+    }
+
     private fun showResultDialog(result: GameResult) {
         val accuracyPercent = (result.accuracy * 100).toInt()
 
@@ -70,7 +110,7 @@ class GameFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.result_title)
             .setMessage(message)
-            .setNegativeButton(R.string.cancel, null)          // ← слева, ничего не делает
+            .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.play_again) { _, _ ->
                 btnStart.performClick()
             }

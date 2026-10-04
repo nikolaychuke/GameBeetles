@@ -1,35 +1,36 @@
 package com.example.beetles
 
-import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import com.example.beetles.data.CurrentPlayer
+import com.example.beetles.data.GameRepository
+import com.example.beetles.data.PlayerEntity
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
-data class Player(
-    val fio: String,
-    val gender: String,
-    val course: String,
-    val difficulty: Int,
-    val birthDate: String,
-    val zodiac: String
-)
-
 class PlayerFormFragment : Fragment() {
+
+    private lateinit var repository: GameRepository
+    private lateinit var textResult: TextView
+    private lateinit var imageZodiac: ImageView
 
     private var selectedDay = 0
     private var selectedMonth = 0
     private var selectedYear = 0
 
-    @SuppressLint("SetTextI18n")
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
+    ): View {
         val view = inflater.inflate(R.layout.player_form, container, false)
+
+        repository = GameRepository(requireContext())
 
         val editFio = view.findViewById<EditText>(R.id.editFio)
         val radioGroup = view.findViewById<RadioGroup>(R.id.radioGroupGender)
@@ -38,8 +39,9 @@ class PlayerFormFragment : Fragment() {
         val textDifficulty = view.findViewById<TextView>(R.id.textDifficulty)
         val calendar = view.findViewById<CalendarView>(R.id.calendarBirth)
         val btnShow = view.findViewById<Button>(R.id.btnShow)
-        val textResult = view.findViewById<TextView>(R.id.textResult)
-        val imageZodiac = view.findViewById<ImageView>(R.id.imageZodiac)
+        val btnSelectExisting = view.findViewById<Button>(R.id.btnSelectExisting)
+        textResult = view.findViewById(R.id.textResult)
+        imageZodiac = view.findViewById(R.id.imageZodiac)
 
         val courses = listOf("1 курс", "2 курс", "3 курс", "4 курс")
         spinnerCourse.adapter = ArrayAdapter(
@@ -79,26 +81,88 @@ class PlayerFormFragment : Fragment() {
             }
             val course = spinnerCourse.selectedItem.toString()
             val difficulty = seekBar.progress + 1
-
             val birthDate = "%02d.%02d.%d".format(selectedDay, selectedMonth, selectedYear)
             val zodiac = getZodiac(selectedDay, selectedMonth)
 
-            val player = Player(fio, gender, course, difficulty, birthDate, zodiac)
+            // Сохраняем игрока в БД
+            lifecycleScope.launch {
+                val playerId = repository.registerPlayer(
+                    PlayerEntity(
+                        fio = fio,
+                        gender = gender,
+                        course = course,
+                        difficulty = difficulty,
+                        birthDate = birthDate,
+                        zodiac = zodiac
+                    )
+                )
+                CurrentPlayer.setPlayerId(requireContext(), playerId)
 
-            textResult.text = """
-                ФИО: ${player.fio}
-                Пол: ${player.gender}
-                Курс: ${player.course}
-                Уровень сложности: ${player.difficulty} из 10
-                Дата рождения: ${player.birthDate}
-                Знак зодиака: ${player.zodiac}
-            """.trimIndent()
+                textResult.text = """
+                    ID: $playerId
+                    ФИО: $fio
+                    Пол: $gender
+                    Курс: $course
+                    Уровень сложности: $difficulty из 10
+                    Дата рождения: $birthDate
+                    Знак зодиака: $zodiac
+                """.trimIndent()
 
-            imageZodiac.setImageResource(getZodiacImage(player.zodiac))
-            imageZodiac.visibility = View.VISIBLE
+                imageZodiac.setImageResource(getZodiacImage(zodiac))
+                imageZodiac.visibility = View.VISIBLE
+
+                Toast.makeText(
+                    requireContext(),
+                    "Игрок зарегистрирован",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        btnSelectExisting.setOnClickListener {
+            showSelectPlayerDialog()
         }
 
         return view
+    }
+
+    private fun showSelectPlayerDialog() {
+        lifecycleScope.launch {
+            val players = repository.getAllPlayers()
+            if (players.isEmpty()) {
+                Toast.makeText(requireContext(), "Нет сохранённых игроков", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            val names = players.map { "${it.fio} (сложность: ${it.difficulty})" }.toTypedArray()
+            AlertDialog.Builder(requireContext())
+                .setTitle("Выбрать игрока")
+                .setItems(names) { _, which ->
+                    val player = players[which]
+                    CurrentPlayer.setPlayerId(requireContext(), player.id)
+
+                    textResult.text = """
+                        ID: ${player.id}
+                        ФИО: ${player.fio}
+                        Пол: ${player.gender}
+                        Курс: ${player.course}
+                        Уровень сложности: ${player.difficulty} из 10
+                        Дата рождения: ${player.birthDate}
+                        Знак зодиака: ${player.zodiac}
+                    """.trimIndent()
+
+                    imageZodiac.setImageResource(getZodiacImage(player.zodiac))
+                    imageZodiac.visibility = View.VISIBLE
+
+                    Toast.makeText(
+                        requireContext(),
+                        "Выбран игрок: ${player.fio}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+        }
     }
 
     private fun getZodiac(day: Int, month: Int): String = when {
