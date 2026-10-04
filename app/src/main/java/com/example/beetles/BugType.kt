@@ -29,5 +29,12 @@ enum class BugType(
         sizeFactor = 1.5f,
         color = Color.rgb(150, 80, 180),
         spawnWeight = 10
+    ),
+    GOLDEN(
+        points = 10,
+        speedFactor = 1.2f,
+        sizeFactor = 1.3f,
+        color = Color.rgb(255, 215, 0),
+        spawnWeight = 0
     )
 }

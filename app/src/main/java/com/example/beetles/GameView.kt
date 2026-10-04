@@ -2,6 +2,12 @@ package com.example.beetles
 
 import android.content.Context
 import android.graphics.*
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.media.AudioAttributes
+import android.media.SoundPool
 import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
@@ -10,6 +16,10 @@ import android.view.View
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class GameView @JvmOverloads constructor(
     context: Context,
@@ -19,7 +29,6 @@ class GameView @JvmOverloads constructor(
     var gameSpeed: Int = 1
     var maxBeetles: Int = 5
     var roundDuration: Int = 30
-
     var onScoreChanged: ((Int) -> Unit)? = null
     var onTimeChanged: ((Int) -> Unit)? = null
     var onGameOver: ((GameResult) -> Unit)? = null
@@ -35,6 +44,70 @@ class GameView @JvmOverloads constructor(
     private val handler = Handler(Looper.getMainLooper())
     private val bugBitmaps = mutableMapOf<BugType, Bitmap>()
     private val baseSize = 120
+    private val bonusBitmap: Bitmap = createBonusBitmap()
+    private var bonus: Bonus? = null
+    private var bonusTimerSeconds = 0
+    var bonusIntervalSeconds: Int = 1
+    private val bonusSpriteSize = 100
+    private val sensorManager: SensorManager? =
+        context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+    private val accelerometer: Sensor? =
+        sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private var tiltX = 0f
+    private var tiltY = 0f
+    private var gravityActive = false
+    private var gravitySecondsLeft = 0
+    private val gravityDurationSeconds = 5
+    private val gravityStrength = 3f
+
+    private var goldenTimerSeconds = 0
+    private val goldenIntervalSeconds = 20
+    private val currencyRepository = CurrencyRepository()
+    private var cachedYuanRate: Float = 0f
+
+    private val soundPool: SoundPool = SoundPool.Builder()
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_GAME)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        )
+        .build()
+
+    private val screamSoundId: Int = soundPool.load(context, R.raw.beetle_scream, 1)
+
+    private val sensorListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            tiltX = -event.values[0] / 9.8f
+            tiltY = event.values[1] / 9.8f
+            tiltX = tiltX.coerceIn(-1f, 1f)
+            tiltY = tiltY.coerceIn(-1f, 1f)
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    private fun spawnBonus() {
+        if (width == 0 || height == 0) return
+        val size = bonusSpriteSize
+        val sizeXLogical = size.toFloat() / width
+        val sizeYLogical = size.toFloat() / height
+        val lx = Random.nextFloat() * (1f - sizeXLogical).coerceAtLeast(0.01f)
+        val ly = Random.nextFloat() * (1f - sizeYLogical).coerceAtLeast(0.01f)
+        bonus = Bonus(lx, ly, bonusBitmap, size)
+        bonus?.update(width, height)
+    }
+
+    private fun applyGravity() {
+        if (width == 0 || height == 0) return
+
+        val tiltMag = kotlin.math.sqrt(tiltX * tiltX + tiltY * tiltY)
+        if (tiltMag < 0.05f) return
+
+        for (b in bugs) {
+            b.applyGravityMotion(tiltX, tiltY, gravityStrength)
+        }
+    }
 
     init {
         BugType.values().forEach { type ->
@@ -94,6 +167,44 @@ class GameView @JvmOverloads constructor(
         return bmp
     }
 
+
+    private fun createBonusBitmap(): Bitmap {
+        val size = 100
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val cx = size / 2f
+
+        paint.color = Color.rgb(255, 215, 0)
+        val path = Path()
+        val outerR = cx
+        val innerR = outerR / 2.5f
+        val spikes = 5
+        for (i in 0 until spikes * 2) {
+            val r = if (i % 2 == 0) outerR else innerR
+            val angle = Math.PI / spikes * i - Math.PI / 2
+            val x = cx + (r * Math.cos(angle)).toFloat()
+            val y = cx + (r * Math.sin(angle)).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        c.drawPath(path, paint)
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.color = Color.rgb(180, 130, 0)
+        c.drawPath(path, paint)
+
+        paint.style = Paint.Style.FILL
+        paint.color = Color.BLACK
+        paint.textSize = 30f
+        paint.textAlign = Paint.Align.CENTER
+        paint.isFakeBoldText = true
+        c.drawText("B", cx, cx + 10f, paint)
+
+        return bmp
+    }
+
     private fun darken(color: Int, factor: Float): Int {
         val r = (Color.red(color) * factor).toInt().coerceIn(0, 255)
         val g = (Color.green(color) * factor).toInt().coerceIn(0, 255)
@@ -116,21 +227,34 @@ class GameView @JvmOverloads constructor(
         }
         handler.removeCallbacks(gameLoop)
         bugs.clear()
+        goldenTimerSeconds = 0
+        cachedYuanRate = 0f
+        loadYuanRate()
         score = 0
         hits = 0
         misses = 0
         nextId = 0
+        bonus = null
+        bonusTimerSeconds = 0
+        gravityActive = false
+        gravitySecondsLeft = 0
+        tiltX = 0f
+        tiltY = 0f
         timeLeft = roundDuration
         isRunning = true
         onScoreChanged?.invoke(score)
         onTimeChanged?.invoke(timeLeft)
         spawnBugs()
         handler.post(gameLoop)
+        accelerometer?.let {
+            sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
+        }
     }
 
     fun stopGame() {
         isRunning = false
         handler.removeCallbacks(gameLoop)
+        sensorManager?.unregisterListener(sensorListener)
     }
 
     private fun spawnBugs() {
@@ -161,6 +285,10 @@ class GameView @JvmOverloads constructor(
         val vy = sin(angle) * logicalSpeedY
 
         val bug = Bug(nextId++, type, logicalX, logicalY, vx, vy, bmp, size)
+
+        bug.baseSpeedX = logicalSpeedX
+        bug.baseSpeedY = logicalSpeedY
+
         bugs.add(bug)
     }
 
@@ -183,16 +311,72 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+
+    private fun spawnGoldenBug() {
+        if (width == 0 || height == 0) return
+        if (bugs.any { it.type == BugType.GOLDEN }) return
+
+        val bmp = bugBitmaps[BugType.GOLDEN] ?: return
+        val size = (baseSize * BugType.GOLDEN.sizeFactor).toInt()
+
+        val sizeXLogical = size.toFloat() / width
+        val sizeYLogical = size.toFloat() / height
+        val logicalX = Random.nextFloat() * (1f - sizeXLogical).coerceAtLeast(0.01f)
+        val logicalY = Random.nextFloat() * (1f - sizeYLogical).coerceAtLeast(0.01f)
+
+        val pixelSpeed = gameSpeed * 5f * BugType.GOLDEN.speedFactor
+        val logicalSpeedX = pixelSpeed / width
+        val logicalSpeedY = pixelSpeed / height
+
+        val angle = Random.nextFloat() * 2f * Math.PI.toFloat()
+        val vx = cos(angle) * logicalSpeedX
+        val vy = sin(angle) * logicalSpeedY
+
+        val bug = Bug(nextId++, BugType.GOLDEN, logicalX, logicalY, vx, vy, bmp, size)
+        bug.baseSpeedX = logicalSpeedX
+        bug.baseSpeedY = logicalSpeedY
+
+        bugs.add(bug)
+    }
+
     private var tickCounter = 0
 
     private fun update() {
-        for (b in bugs) b.update(width, height)
+        val bounce = !gravityActive
+        for (b in bugs) b.update(width, height, bounce)
+        bonus?.update(width, height)
+
+        if (gravityActive) applyGravity()
 
         tickCounter++
         if (tickCounter >= 60) {
             tickCounter = 0
             timeLeft--
             onTimeChanged?.invoke(timeLeft)
+
+            goldenTimerSeconds++
+            if (goldenTimerSeconds >= goldenIntervalSeconds) {
+                goldenTimerSeconds = 0
+                spawnGoldenBug()
+            }
+
+            if (bonus == null) {
+                bonusTimerSeconds++
+                if (bonusTimerSeconds >= bonusIntervalSeconds) {
+                    bonusTimerSeconds = 0
+                    spawnBonus()
+                }
+            }
+
+            if (gravityActive) {
+                gravitySecondsLeft--
+                if (gravitySecondsLeft <= 0) {
+                    gravityActive = false
+                    tiltX = 0f
+                    tiltY = 0f
+                    for (b in bugs) b.restoreRandomDirection()
+                }
+            }
 
             if (timeLeft <= 0) {
                 stopGame()
@@ -203,27 +387,45 @@ class GameView @JvmOverloads constructor(
             }
         }
 
-        if (bugs.size < maxBeetles) {
-            spawnOneBug()
-        }
+        if (bugs.size < maxBeetles) spawnOneBug()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         for (b in bugs) b.draw(canvas)
+        bonus?.draw(canvas)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_DOWN && isRunning) {
             val x = event.x
             val y = event.y
+
+            val bonusRef = bonus
+            if (bonusRef != null && bonusRef.rect.contains(x, y)) {
+                gravityActive = true
+                gravitySecondsLeft = gravityDurationSeconds
+                soundPool.play(screamSoundId, 1f, 1f, 1, 0, 1f)
+                bonus = null
+                invalidate()
+                return true
+            }
+
             var hit = false
 
             for (i in bugs.indices.reversed()) {
-                val b = bugs[i]
-                if (b.rect.contains(x, y)) {
+                val bug = bugs[i]
+                if (bug.rect.contains(x, y)) {
                     hit = true
-                    score += b.type.points
+
+                    val points = if (bug.type == BugType.GOLDEN) {
+                        val rate = cachedYuanRate
+                        if (rate > 0f) (rate).toInt() else bug.type.points
+                    } else {
+                        bug.type.points
+                    }
+
+                    score += points
                     hits++
                     bugs.removeAt(i)
                     onScoreChanged?.invoke(score)
@@ -245,5 +447,18 @@ class GameView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         stopGame()
+        sensorManager?.unregisterListener(sensorListener)
+        soundPool.release()
     }
+
+    private fun loadYuanRate() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val rate = currencyRepository.getYuanRate()
+            withContext(Dispatchers.Main) {
+                cachedYuanRate = rate ?: 0f
+                android.util.Log.d("Currency", "Yuan rate: $cachedYuanRate")
+            }
+        }
+    }
+
 }
