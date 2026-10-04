@@ -15,10 +15,10 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
+import org.koin.android.ext.android.inject
 class RecordsFragment : Fragment() {
 
-    private lateinit var repository: GameRepository
+    private val repository: GameRepository by inject()
     private lateinit var listView: ListView
     private lateinit var textEmpty: TextView
 
@@ -29,7 +29,6 @@ class RecordsFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         val view = inflater.inflate(R.layout.records_form, container, false)
-        repository = GameRepository(requireContext())
 
         listView = view.findViewById(R.id.listRecords)
         textEmpty = view.findViewById(R.id.textEmpty)

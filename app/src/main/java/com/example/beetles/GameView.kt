@@ -65,6 +65,10 @@ class GameView @JvmOverloads constructor(
     private val currencyRepository = CurrencyRepository()
     private var cachedYuanRate: Float = 0f
 
+    var onYuanRateLoaded: ((Float) -> Unit)? = null
+
+    var onGetYuanRate: (() -> Float)? = null
+
     private val soundPool: SoundPool = SoundPool.Builder()
         .setAudioAttributes(
             AudioAttributes.Builder()
@@ -251,6 +255,38 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+    fun saveState(): GameState {
+        return GameState(
+            score = score,
+            hits = hits,
+            misses = misses,
+            timeLeft = timeLeft,
+            bugs = bugs.toList(),
+            isRunning = isRunning
+        )
+    }
+
+    fun restoreState(state: GameState) {
+        this.score = state.score
+        this.hits = state.hits
+        this.misses = state.misses
+        this.timeLeft = state.timeLeft
+        this.bugs.clear()
+        this.bugs.addAll(state.bugs)
+        this.isRunning = state.isRunning
+
+        onScoreChanged?.invoke(score)
+        onTimeChanged?.invoke(timeLeft)
+
+        if (isRunning) {
+            handler.post(gameLoop)
+            accelerometer?.let {
+                sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+        }
+        invalidate()
+    }
+
     fun stopGame() {
         isRunning = false
         handler.removeCallbacks(gameLoop)
@@ -419,7 +455,7 @@ class GameView @JvmOverloads constructor(
                     hit = true
 
                     val points = if (bug.type == BugType.GOLDEN) {
-                        val rate = cachedYuanRate
+                        val rate = onGetYuanRate?.invoke() ?: 0f
                         if (rate > 0f) (rate).toInt() else bug.type.points
                     } else {
                         bug.type.points
@@ -456,7 +492,7 @@ class GameView @JvmOverloads constructor(
             val rate = currencyRepository.getYuanRate()
             withContext(Dispatchers.Main) {
                 cachedYuanRate = rate ?: 0f
-                android.util.Log.d("Currency", "Yuan rate: $cachedYuanRate")
+                onYuanRateLoaded?.invoke(cachedYuanRate)
             }
         }
     }

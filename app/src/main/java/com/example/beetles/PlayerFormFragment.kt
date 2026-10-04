@@ -13,10 +13,10 @@ import com.example.beetles.data.GameRepository
 import com.example.beetles.data.PlayerEntity
 import kotlinx.coroutines.launch
 import java.util.Calendar
-
+import org.koin.android.ext.android.inject
 class PlayerFormFragment : Fragment() {
 
-    private lateinit var repository: GameRepository
+    private val repository: GameRepository by inject()
     private lateinit var textResult: TextView
     private lateinit var imageZodiac: ImageView
 
@@ -29,8 +29,6 @@ class PlayerFormFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         val view = inflater.inflate(R.layout.player_form, container, false)
-
-        repository = GameRepository(requireContext())
 
         val editFio = view.findViewById<EditText>(R.id.editFio)
         val radioGroup = view.findViewById<RadioGroup>(R.id.radioGroupGender)

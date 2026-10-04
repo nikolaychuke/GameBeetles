@@ -15,6 +15,8 @@ import com.example.beetles.data.CurrentPlayer
 import com.example.beetles.data.GameRepository
 import com.example.beetles.data.ScoreEntity
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
+import org.koin.androidx.viewmodel.ext.android.viewModel
 
 class GameFragment : Fragment() {
 
@@ -22,7 +24,9 @@ class GameFragment : Fragment() {
     private lateinit var textScore: TextView
     private lateinit var textTime: TextView
     private lateinit var btnStart: Button
-    private lateinit var repository: GameRepository
+
+    private val viewModel: GameViewModel by viewModel()
+    private val repository: GameRepository by inject()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -30,22 +34,47 @@ class GameFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         val view = inflater.inflate(R.layout.game_form, container, false)
-        repository = GameRepository(requireContext())
 
         gameView = view.findViewById(R.id.gameView)
         textScore = view.findViewById(R.id.textScore)
         textTime = view.findViewById(R.id.textTime)
         btnStart = view.findViewById(R.id.btnStart)
 
-        gameView.onScoreChanged = { score ->
+        viewModel.restoreState()?.let { state ->
+            gameView.restoreState(state)
+        }
+
+        viewModel.score.observe(viewLifecycleOwner) { score ->
             textScore.text = getString(R.string.score_format, score)
         }
-        gameView.onTimeChanged = { t ->
-            textTime.text = getString(R.string.time_format, t)
+        viewModel.timeLeft.observe(viewLifecycleOwner) { time ->
+            textTime.text = getString(R.string.time_format, time)
+        }
+        viewModel.isRunning.observe(viewLifecycleOwner) { running ->
+            if (running) {
+                btnStart.isEnabled = false
+                btnStart.text = getString(R.string.game_in_progress)
+            } else {
+                btnStart.isEnabled = true
+                btnStart.text = getString(R.string.start_game)
+            }
+        }
+
+
+
+        gameView.onGetYuanRate = { viewModel.getCachedYuanRate() }
+
+        gameView.onYuanRateLoaded = { rate ->
+            viewModel.setYuanRate(rate)
+        }
+        gameView.onScoreChanged = { score ->
+            viewModel.onScoreChanged(score)
+        }
+        gameView.onTimeChanged = { time ->
+            viewModel.onTimeChanged(time)
         }
         gameView.onGameOver = { result ->
-            btnStart.isEnabled = true
-            btnStart.text = getString(R.string.play_again)
+            viewModel.onGameStopped()
             saveScoreAndShowDialog(result)
         }
 
@@ -63,13 +92,17 @@ class GameFragment : Fragment() {
             val prefs = requireContext()
                 .getSharedPreferences("beetles", Context.MODE_PRIVATE)
 
-            gameView.gameSpeed = prefs.getInt("speed", 1).coerceAtLeast(1)
-            gameView.bonusIntervalSeconds = prefs.getInt("bonusInterval", 15).coerceAtLeast(1)
-            gameView.maxBeetles = prefs.getInt("maxBeetles", 5).coerceAtLeast(1)
-            gameView.roundDuration = prefs.getInt("roundDuration", 30).coerceAtLeast(1)
+            viewModel.gameSpeed = prefs.getInt("speed", 1).coerceAtLeast(1)
+            viewModel.bonusInterval = prefs.getInt("bonusInterval", 15).coerceAtLeast(1)
+            viewModel.maxBeetles = prefs.getInt("maxBeetles", 5).coerceAtLeast(1)
+            viewModel.roundDuration = prefs.getInt("roundDuration", 30).coerceAtLeast(1)
 
-            btnStart.isEnabled = false
-            btnStart.text = getString(R.string.game_in_progress)
+            gameView.gameSpeed = viewModel.gameSpeed
+            gameView.bonusIntervalSeconds = viewModel.bonusInterval
+            gameView.maxBeetles = viewModel.maxBeetles
+            gameView.roundDuration = viewModel.roundDuration
+
+            viewModel.onGameStarted()
             gameView.post { gameView.startGame() }
         }
 
@@ -81,7 +114,6 @@ class GameFragment : Fragment() {
 
         lifecycleScope.launch {
             if (playerId > 0L) {
-                val difficulty = gameView.gameSpeed
                 repository.saveScore(
                     ScoreEntity(
                         playerId = playerId,
@@ -89,7 +121,7 @@ class GameFragment : Fragment() {
                         hits = result.hits,
                         misses = result.misses,
                         accuracy = result.accuracy,
-                        difficulty = difficulty,
+                        difficulty = viewModel.gameSpeed,
                         timestamp = System.currentTimeMillis()
                     )
                 )
@@ -121,9 +153,16 @@ class GameFragment : Fragment() {
 
     override fun onPause() {
         super.onPause()
+        val state = gameView.saveState()
+        viewModel.saveState(
+            state.score,
+            state.hits,
+            state.misses,
+            state.timeLeft,
+            state.bugs,
+            state.isRunning
+        )
         gameView.stopGame()
-        btnStart.isEnabled = true
-        btnStart.text = getString(R.string.start_game)
     }
 
     override fun onDestroyView() {
