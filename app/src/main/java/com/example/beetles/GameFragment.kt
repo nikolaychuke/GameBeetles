@@ -64,6 +64,7 @@ class GameFragment : Fragment() {
                 .getSharedPreferences("beetles", Context.MODE_PRIVATE)
 
             gameView.gameSpeed = prefs.getInt("speed", 1).coerceAtLeast(1)
+            gameView.bonusIntervalSeconds = prefs.getInt("bonusInterval", 15).coerceAtLeast(1)
             gameView.maxBeetles = prefs.getInt("maxBeetles", 5).coerceAtLeast(1)
             gameView.roundDuration = prefs.getInt("roundDuration", 30).coerceAtLeast(1)
 
