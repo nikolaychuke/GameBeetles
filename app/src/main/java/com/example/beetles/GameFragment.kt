@@ -25,6 +25,7 @@ class GameFragment : Fragment() {
     private lateinit var textScore: TextView
     private lateinit var textTime: TextView
     private lateinit var btnStart: Button
+
     private val viewModel: GameViewModel by activityViewModel()
     private val repository: GameRepository by inject()
 
@@ -65,6 +66,11 @@ class GameFragment : Fragment() {
         textScore = view.findViewById(R.id.textScore)
         textTime = view.findViewById(R.id.textTime)
         btnStart = view.findViewById(R.id.btnStart)
+
+        // ← НОВОЕ: восстанавливаем состояние GameView при повороте
+        viewModel.restoreState()?.let { state ->
+            gameView.restoreState(state)
+        }
 
         viewModel.isRunning.observe(viewLifecycleOwner) { running ->
             abilityPanel.visibility = if (running) View.VISIBLE else View.GONE

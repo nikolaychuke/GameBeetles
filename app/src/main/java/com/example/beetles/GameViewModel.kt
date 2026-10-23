@@ -15,6 +15,13 @@ class GameViewModel : ViewModel() {
     private val _isRunning = MutableLiveData(false)
     val isRunning: LiveData<Boolean> = _isRunning
 
+    // ← ДОБАВЛЕНО: сохраняем hits и misses
+    private val _hits = MutableLiveData(0)
+    val hits: LiveData<Int> = _hits
+
+    private val _misses = MutableLiveData(0)
+    val misses: LiveData<Int> = _misses
+
     private val _bugs = MutableLiveData<List<Bug>>(emptyList())
 
     var gameSpeed: Int = 1
@@ -53,6 +60,7 @@ class GameViewModel : ViewModel() {
 
     fun getCachedYuanRate(): Float = _yuanRate.value ?: 0f
 
+    // ← ИЗМЕНЕНО: сохраняем hits и misses
     fun saveState(
         score: Int,
         hits: Int,
@@ -62,11 +70,27 @@ class GameViewModel : ViewModel() {
         isRunning: Boolean
     ) {
         _score.value = score
+        _hits.value = hits          // ← НОВОЕ
+        _misses.value = misses      // ← НОВОЕ
         _timeLeft.value = timeLeft
         _bugs.value = bugs
         _isRunning.value = isRunning
     }
 
+    // ← ИЗМЕНЕНО: восстанавливаем hits и misses
+    fun restoreState(): GameState? {
+        val bugsList = _bugs.value
+        if (bugsList.isNullOrEmpty() && (_score.value ?: 0) == 0) return null
+        return GameState(
+            _score.value ?: 0,
+            _hits.value ?: 0,           // ← НОВОЕ
+            _misses.value ?: 0,         // ← НОВОЕ
+            _timeLeft.value ?: 30,
+            bugsList ?: emptyList(),
+            _isRunning.value ?: false,
+            _abilities.value ?: emptyMap()
+        )
+    }
 
     fun toggleAbilitySelection(type: AbilityType) {
         val current = _selectedAbilities.value ?: emptySet()
@@ -83,7 +107,7 @@ class GameViewModel : ViewModel() {
         _selectedAbilities.value = newSelection
 
         val newAbilities = newSelection.associateWith { type ->
-            _abilities.value?.get(type) ?: AbilityType.valueOf(type.name).maxCharges
+            _abilities.value?.get(type) ?: type.maxCharges
         }
         _abilities.value = newAbilities
     }
