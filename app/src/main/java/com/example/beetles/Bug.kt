@@ -71,6 +71,15 @@ class Bug(
         vy = ny * baseSpeedY * gravityStrength
     }
 
+    fun updateSlowed(viewWidth: Int, viewHeight: Int, bounce: Boolean = true) {
+        val originalVx = vx
+        val originalVy = vy
+        vx *= 0.5f
+        vy *= 0.5f
+        update(viewWidth, viewHeight, bounce)
+        vx = originalVx
+        vy = originalVy
+    }
     fun restoreRandomDirection() {
         val speedX = baseSpeedX
         val speedY = baseSpeedY

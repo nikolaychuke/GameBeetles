@@ -6,5 +6,6 @@ data class GameState(
     val misses: Int,
     val timeLeft: Int,
     val bugs: List<Bug>,
-    val isRunning: Boolean
+    val isRunning: Boolean,
+    val abilities: Map<AbilityType, Int> = emptyMap()
 )

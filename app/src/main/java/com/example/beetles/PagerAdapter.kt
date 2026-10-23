@@ -6,7 +6,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 
 class PagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
 
-    override fun getItemCount(): Int = 6
+    override fun getItemCount(): Int = 7
 
     override fun createFragment(position: Int): Fragment = when (position) {
         0 -> PlayerFormFragment()
@@ -14,6 +14,7 @@ class PagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) 
         2 -> AuthorsFragment()
         3 -> SettingsFragment()
         4 -> GameFragment()
+        5 -> ShopFragment()
         else -> RecordsFragment()
     }
 }

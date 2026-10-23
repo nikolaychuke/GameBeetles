@@ -24,6 +24,11 @@ class GameViewModel : ViewModel() {
 
     private val _yuanRate = MutableLiveData(0f)
 
+    private val _selectedAbilities = MutableLiveData<Set<AbilityType>>(emptySet())
+    val selectedAbilities: LiveData<Set<AbilityType>> = _selectedAbilities
+    private val _abilities = MutableLiveData<Map<AbilityType, Int>>(emptyMap())
+    val abilities: LiveData<Map<AbilityType, Int>> = _abilities
+
     fun onScoreChanged(newScore: Int) {
         _score.value = newScore
     }
@@ -33,11 +38,13 @@ class GameViewModel : ViewModel() {
     }
 
     fun onGameStarted() {
+        refillSelectedAbilities()
         _isRunning.value = true
     }
 
     fun onGameStopped() {
         _isRunning.value = false
+        refillSelectedAbilities()
     }
 
     fun setYuanRate(rate: Float) {
@@ -46,23 +53,60 @@ class GameViewModel : ViewModel() {
 
     fun getCachedYuanRate(): Float = _yuanRate.value ?: 0f
 
-    fun saveState(score: Int, hits: Int, misses: Int, timeLeft: Int, bugs: List<Bug>, isRunning: Boolean) {
+    fun saveState(
+        score: Int,
+        hits: Int,
+        misses: Int,
+        timeLeft: Int,
+        bugs: List<Bug>,
+        isRunning: Boolean
+    ) {
         _score.value = score
         _timeLeft.value = timeLeft
         _bugs.value = bugs
         _isRunning.value = isRunning
     }
 
-    fun restoreState(): GameState? {
-        val bugsList = _bugs.value
-        if (bugsList.isNullOrEmpty() && (_score.value ?: 0) == 0) return null
-        return GameState(
-            _score.value ?: 0,
-            0,
-            0,
-            _timeLeft.value ?: 30,
-            bugsList ?: emptyList(),
-            _isRunning.value ?: false
-        )
+
+    fun toggleAbilitySelection(type: AbilityType) {
+        val current = _selectedAbilities.value ?: emptySet()
+
+        val newSelection = if (type in current) {
+            current - type
+        } else {
+            if (current.size >= 2) {
+                return
+            }
+            current + type
+        }
+
+        _selectedAbilities.value = newSelection
+
+        val newAbilities = newSelection.associateWith { type ->
+            _abilities.value?.get(type) ?: AbilityType.valueOf(type.name).maxCharges
+        }
+        _abilities.value = newAbilities
+    }
+
+    fun refillSelectedAbilities() {
+        val selected = _selectedAbilities.value ?: emptySet()
+        _abilities.value = selected.associateWith { it.maxCharges }
+    }
+
+    fun useAbility(type: AbilityType): Boolean {
+        val current = _abilities.value ?: return false
+        val charges = current[type] ?: 0
+        if (charges <= 0) return false
+
+        _abilities.value = current + (type to (charges - 1))
+        return true
+    }
+
+    fun isSelected(type: AbilityType): Boolean {
+        return _selectedAbilities.value?.contains(type) ?: false
+    }
+
+    fun canSelectMore(): Boolean {
+        return (_selectedAbilities.value?.size ?: 0) < 2
     }
 }

@@ -10,7 +10,26 @@ class GameRepository(context: Context) {
 
     suspend fun getAllPlayers(): List<PlayerEntity> = dao.getAllPlayers()
 
-    suspend fun saveScore(score: ScoreEntity): Long = dao.insertScore(score)
+    suspend fun saveScore(score: ScoreEntity): Long {
+        val existing = dao.getScoreByPlayerId(score.playerId)
 
-    suspend fun getAllScores(): List<ScoreWithPlayer> = dao.getAllScoresWithPlayers()
+        return if (existing == null) {
+            dao.insertScore(score)
+        } else if (score.score > existing.score) {
+            val updated = existing.copy(
+                score = score.score,
+                hits = score.hits,
+                misses = score.misses,
+                accuracy = score.accuracy,
+                difficulty = score.difficulty,
+                timestamp = score.timestamp
+            )
+            dao.updateScore(updated)
+            updated.id
+        } else {
+            existing.id
+        }
+    }
+
+    suspend fun getAllScores(): List<ScoreWithPlayer> = dao.getBestScorePerPlayer()
 }

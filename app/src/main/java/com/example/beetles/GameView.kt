@@ -47,7 +47,7 @@ class GameView @JvmOverloads constructor(
     private val bonusBitmap: Bitmap = createBonusBitmap()
     private var bonus: Bonus? = null
     private var bonusTimerSeconds = 0
-    var bonusIntervalSeconds: Int = 1
+    var bonusIntervalSeconds: Int = 15
     private val bonusSpriteSize = 100
     private val sensorManager: SensorManager? =
         context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
@@ -59,15 +59,20 @@ class GameView @JvmOverloads constructor(
     private var gravitySecondsLeft = 0
     private val gravityDurationSeconds = 5
     private val gravityStrength = 3f
-
     private var goldenTimerSeconds = 0
     private val goldenIntervalSeconds = 20
     private val currencyRepository = CurrencyRepository()
     private var cachedYuanRate: Float = 0f
 
     var onYuanRateLoaded: ((Float) -> Unit)? = null
-
     var onGetYuanRate: (() -> Float)? = null
+
+    private var freezeSecondsLeft = 0
+    private var slowSecondsLeft = 0
+    private var multiHitActive = false
+    private var bombAiming = false
+
+    var onAbilityUsed: ((AbilityType) -> Unit)? = null
 
     private val soundPool: SoundPool = SoundPool.Builder()
         .setAudioAttributes(
@@ -96,8 +101,10 @@ class GameView @JvmOverloads constructor(
         val size = bonusSpriteSize
         val sizeXLogical = size.toFloat() / width
         val sizeYLogical = size.toFloat() / height
+
         val lx = Random.nextFloat() * (1f - sizeXLogical).coerceAtLeast(0.01f)
         val ly = Random.nextFloat() * (1f - sizeYLogical).coerceAtLeast(0.01f)
+
         bonus = Bonus(lx, ly, bonusBitmap, size)
         bonus?.update(width, height)
     }
@@ -170,7 +177,6 @@ class GameView @JvmOverloads constructor(
 
         return bmp
     }
-
 
     private fun createBonusBitmap(): Bitmap {
         val size = 100
@@ -246,6 +252,10 @@ class GameView @JvmOverloads constructor(
         tiltY = 0f
         timeLeft = roundDuration
         isRunning = true
+        freezeSecondsLeft = 0
+        slowSecondsLeft = 0
+        multiHitActive = false
+        bombAiming = false
         onScoreChanged?.invoke(score)
         onTimeChanged?.invoke(timeLeft)
         spawnBugs()
@@ -262,7 +272,8 @@ class GameView @JvmOverloads constructor(
             misses = misses,
             timeLeft = timeLeft,
             bugs = bugs.toList(),
-            isRunning = isRunning
+            isRunning = isRunning,
+            abilities = emptyMap()
         )
     }
 
@@ -291,6 +302,25 @@ class GameView @JvmOverloads constructor(
         isRunning = false
         handler.removeCallbacks(gameLoop)
         sensorManager?.unregisterListener(sensorListener)
+    }
+
+    fun resetGame() {
+        stopGame()
+        bugs.clear()
+        bonus = null
+        score = 0
+        hits = 0
+        misses = 0
+        timeLeft = roundDuration
+        freezeSecondsLeft = 0
+        slowSecondsLeft = 0
+        multiHitActive = false
+        bombAiming = false
+        gravityActive = false
+        gravitySecondsLeft = 0
+        onScoreChanged?.invoke(score)
+        onTimeChanged?.invoke(timeLeft)
+        invalidate()
     }
 
     private fun spawnBugs() {
@@ -347,7 +377,6 @@ class GameView @JvmOverloads constructor(
         }
     }
 
-
     private fun spawnGoldenBug() {
         if (width == 0 || height == 0) return
         if (bugs.any { it.type == BugType.GOLDEN }) return
@@ -379,16 +408,33 @@ class GameView @JvmOverloads constructor(
 
     private fun update() {
         val bounce = !gravityActive
-        for (b in bugs) b.update(width, height, bounce)
+        val frozen = freezeSecondsLeft > 0
+        val slowed = slowSecondsLeft > 0
+
+        for (b in bugs) {
+            if (!frozen) {
+                if (slowed) {
+                    b.updateSlowed(width, height, bounce)
+                } else {
+                    b.update(width, height, bounce)
+                }
+            }
+        }
+
         bonus?.update(width, height)
 
-        if (gravityActive) applyGravity()
+        if (gravityActive) {
+            applyGravity()
+        }
 
         tickCounter++
         if (tickCounter >= 60) {
             tickCounter = 0
             timeLeft--
             onTimeChanged?.invoke(timeLeft)
+
+            if (freezeSecondsLeft > 0) freezeSecondsLeft--
+            if (slowSecondsLeft > 0) slowSecondsLeft--
 
             goldenTimerSeconds++
             if (goldenTimerSeconds >= goldenIntervalSeconds) {
@@ -439,10 +485,18 @@ class GameView @JvmOverloads constructor(
 
             val bonusRef = bonus
             if (bonusRef != null && bonusRef.rect.contains(x, y)) {
+                bombAiming = false
                 gravityActive = true
                 gravitySecondsLeft = gravityDurationSeconds
                 soundPool.play(screamSoundId, 1f, 1f, 1, 0, 1f)
                 bonus = null
+                invalidate()
+                return true
+            }
+
+            if (bombAiming) {
+                explodeBombAt(x, y)
+                bombAiming = false
                 invalidate()
                 return true
             }
@@ -454,15 +508,19 @@ class GameView @JvmOverloads constructor(
                 if (bug.rect.contains(x, y)) {
                     hit = true
 
-                    val points = if (bug.type == BugType.GOLDEN) {
+                    val pointsMultiplier = if (multiHitActive) 5 else 1
+                    multiHitActive = false
+
+                    val basePoints = if (bug.type == BugType.GOLDEN) {
                         val rate = onGetYuanRate?.invoke() ?: 0f
-                        if (rate > 0f) (rate).toInt() else bug.type.points
+                        if (rate > 0f) rate.toInt() else bug.type.points
                     } else {
                         bug.type.points
                     }
 
+                    val points = basePoints * pointsMultiplier
                     score += points
-                    hits++
+                    hits += pointsMultiplier
                     bugs.removeAt(i)
                     onScoreChanged?.invoke(score)
                     break
@@ -497,4 +555,47 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+    fun activateAbility(type: AbilityType): Boolean {
+        if (!isRunning) return false
+
+        when (type) {
+            AbilityType.FREEZE -> {
+                freezeSecondsLeft = type.durationSeconds
+                onAbilityUsed?.invoke(type)
+                return true
+            }
+            AbilityType.BOMB -> {
+                bombAiming = true
+                onAbilityUsed?.invoke(type)
+                return true
+            }
+            AbilityType.SLOW -> {
+                slowSecondsLeft = type.durationSeconds
+                onAbilityUsed?.invoke(type)
+                return true
+            }
+            AbilityType.MULTI_HIT -> {
+                multiHitActive = true
+                onAbilityUsed?.invoke(type)
+                return true
+            }
+        }
+    }
+
+    private fun explodeBombAt(centerX: Float, centerY: Float) {
+        val radius = minOf(width, height) * 0.4f
+
+        val toRemove = bugs.filter { bug ->
+            val dx = bug.rect.centerX() - centerX
+            val dy = bug.rect.centerY() - centerY
+            dx * dx + dy * dy <= radius * radius
+        }
+        toRemove.forEach { bug ->
+            score += bug.type.points
+            hits++
+        }
+        bugs.removeAll(toRemove)
+        onScoreChanged?.invoke(score)
+        soundPool.play(screamSoundId, 1f, 1f, 1, 0, 1f)
+    }
 }

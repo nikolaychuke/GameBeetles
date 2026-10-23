@@ -20,6 +20,23 @@ interface GameDao {
     @Insert
     suspend fun insertScore(score: ScoreEntity): Long
 
+    @Query("SELECT * FROM scores WHERE playerId = :playerId LIMIT 1")
+    suspend fun getScoreByPlayerId(playerId: Long): ScoreEntity?
+
+    @Update
+    suspend fun updateScore(score: ScoreEntity)
+
+    @Transaction
+    @Query("""
+        SELECT * FROM scores s
+        WHERE s.score = (
+            SELECT MAX(s2.score) FROM scores s2 WHERE s2.playerId = s.playerId
+        )
+        GROUP BY s.playerId
+        ORDER BY s.score DESC, s.timestamp DESC
+    """)
+    suspend fun getBestScorePerPlayer(): List<ScoreWithPlayer>
+
     @Transaction
     @Query("SELECT * FROM scores ORDER BY score DESC, timestamp DESC")
     suspend fun getAllScoresWithPlayers(): List<ScoreWithPlayer>

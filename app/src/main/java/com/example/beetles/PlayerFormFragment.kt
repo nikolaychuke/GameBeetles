@@ -82,7 +82,6 @@ class PlayerFormFragment : Fragment() {
             val birthDate = "%02d.%02d.%d".format(selectedDay, selectedMonth, selectedYear)
             val zodiac = getZodiac(selectedDay, selectedMonth)
 
-            // Сохраняем игрока в БД
             lifecycleScope.launch {
                 val playerId = repository.registerPlayer(
                     PlayerEntity(
