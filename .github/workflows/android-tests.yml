@@ -1,6 +1,3 @@
-cd /path/to/GameBeetles
-mkdir -p .github/workflows
-cat > .github/workflows/android-tests.yml << 'EOF'
 name: Android Unit Tests
 
 on:
@@ -26,4 +23,3 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
-EOF
