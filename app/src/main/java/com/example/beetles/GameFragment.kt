@@ -67,7 +67,6 @@ class GameFragment : Fragment() {
         textTime = view.findViewById(R.id.textTime)
         btnStart = view.findViewById(R.id.btnStart)
 
-        // ← НОВОЕ: восстанавливаем состояние GameView при повороте
         viewModel.restoreState()?.let { state ->
             gameView.restoreState(state)
         }

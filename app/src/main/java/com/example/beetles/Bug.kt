@@ -57,6 +57,41 @@ class Bug(
         )
     }
 
+    fun updateSlowed(viewWidth: Int, viewHeight: Int, bounce: Boolean = true) {
+        logicalX += vx * 0.5f
+        logicalY += vy * 0.5f
+
+        val sizeXLogical = size.toFloat() / viewWidth
+        val sizeYLogical = size.toFloat() / viewHeight
+
+        if (bounce) {
+            if (logicalX < 0f) { logicalX = 0f; vx = -vx }
+            if (logicalX + sizeXLogical > 1f) {
+                logicalX = 1f - sizeXLogical; vx = -vx
+            }
+            if (logicalY < 0f) { logicalY = 0f; vy = -vy }
+            if (logicalY + sizeYLogical > 1f) {
+                logicalY = 1f - sizeYLogical; vy = -vy
+            }
+        } else {
+            if (logicalX < 0f) { logicalX = 0f; vx = 0f }
+            if (logicalX + sizeXLogical > 1f) {
+                logicalX = 1f - sizeXLogical; vx = 0f
+            }
+            if (logicalY < 0f) { logicalY = 0f; vy = 0f }
+            if (logicalY + sizeYLogical > 1f) {
+                logicalY = 1f - sizeYLogical; vy = 0f
+            }
+        }
+
+        rect.set(
+            logicalX * viewWidth,
+            logicalY * viewHeight,
+            logicalX * viewWidth + size,
+            logicalY * viewHeight + size
+        )
+    }
+
     fun applyGravityMotion(tiltX: Float, tiltY: Float, gravityStrength: Float) {
         val len = kotlin.math.sqrt(tiltX * tiltX + tiltY * tiltY)
         if (len < 0.01f) {
@@ -66,20 +101,10 @@ class Bug(
         }
         val nx = tiltX / len
         val ny = tiltY / len
-
         vx = nx * baseSpeedX * gravityStrength
         vy = ny * baseSpeedY * gravityStrength
     }
 
-    fun updateSlowed(viewWidth: Int, viewHeight: Int, bounce: Boolean = true) {
-        val originalVx = vx
-        val originalVy = vy
-        vx *= 0.5f
-        vy *= 0.5f
-        update(viewWidth, viewHeight, bounce)
-        vx = originalVx
-        vy = originalVy
-    }
     fun restoreRandomDirection() {
         val speedX = baseSpeedX
         val speedY = baseSpeedY
